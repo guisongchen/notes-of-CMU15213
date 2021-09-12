@@ -180,16 +180,77 @@ Search steps: 32 - 16 - 8- 4 - 2 -1-0, then adds all required bits count togethe
 
 ## FloatScale2
 
-Basic idea:
+Basic idea: 
 
-(-1)^s M 2^E   *   (-1)^0 1.0 2^1 = (-1)^s (M*1.0) 2^(E+1)
+There are three parts of a float number: exponent, fraction and sign
 
-Only exponent part increase 1.
+(-1)^s M 2^E   *   (-1)^0 1.0 2^1 = (-1)^s (M*1.0) 2^(E+1) = (-1)^s (M) 2^(E+1) 
 
-- Pick up exp bits from input unsigned int.
-- Pick up sign bit from input unsigned int.
-- For NaN cases (exp=0xFF), return original input value.
-- Else return (-1)^s (M*1.0) 2^(E+1).
+- Pick up exp, frac and sign bits from input unsigned int.
+
+- For NaN cases (exp=0xFF, special value), return original input value.
+
+- For renormalized value (exp=0x00) , keep exp and sign untouched, scale frac.
+
+  E = 1 - 127
+
+  M = 0. frac
+
+- Else return (-1)^s (M) 2^(E+1).
+
+  E = exp - 127
+
+  M = 1. frac
+
+## FloatFloat2Int
+
+Two steps:
+
+- unsigned int to float
+- float to int
+
+There are three parts of a float number: exponent, fraction and sign.
+
+- Pick up exp, frac and sign bits from input unsigned int.
+
+- For NaN cases (exp=0xFF, special value), return 0x8000'0000.
+
+- For renormalized value (exp=0x00) , return 0.
+
+- Else depends on E = exp - 127 (normalized value):
+
+  Caution: we get frac by: frac = (uf & 0x7F'FFFF) | 0x80'0000;
+
+  0x7F'FFFF get the last 23 bits, 0x80'0000 gets the 1 bit before dot(.)
+
+  frac = original_frac << 23
+
+  - If E > 31, since int only has 32 bits, it will overflow (NaN)
+
+  - If E < 0, orignal_frac 2^E will less than 1, saft to return 0
+
+  - If E >= 0 and E <= 31:
+
+    we need to shift left: (E - 23) bits. (since we shift original_frac left 23 bits)
+
+    - If E < 23: it means we need to shift right 23-E bits
+    - If E >=23, just shift left E-23 as normal.
+
+- Set sign bit and return.
+
+## FloatPower2
+
+2.0^1 = (-1)^0 1.0 2^(1) = 0x4000'0000 = 1 << 30 = 128 << 23 = exp << 23
+
+sign = 0, M = 1.0,  E = 1
+
+frac = 0, exp = 127 + 1 = 128
+
+2.0^x = (-1)^0 1.0 2^(x) : exp = E+127=127+x
+
+- If x < (1-127), denormalized value, return 0
+- If x >= (255-127), special value, return +inf (a.k.a. 0x7F80'0000)
+- Else return (x+127) << 23
 
 # Basics
 
@@ -261,4 +322,3 @@ Both yield expected result.
 - Signed: similar to mod (if reinterpreted to unsigned value)
 
 May yield unexpected result. 
-
